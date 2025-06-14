@@ -26,7 +26,7 @@ belt-speed-measurement/
 ## Installation & Setup
 **1. Environment Setup**
 ```bash
-git clone <repository-url>
+git clone https://github.com/ChaHGreen/belt-speed-measurement.git
 cd belt-speed-measurement
 
 # Prepare virtual environment
