@@ -5,6 +5,9 @@ Automatic conveyor belt speed measurement using ZED camera data, achiving:
 - **Real-time Speed Measurement**: Optical flow tracking with depth masking  
 - **Stopped Belt Detection**:  Handles stationary belts correctly  
 - **Frame-by-Frame Logging** : Outputs `results.csv` with timestamps  
+
+Demo in: [link](https://drive.google.com/file/d/1qWR8-7YAV6XU0sYz39lUvr57zceSWf--/view?usp=drive_link)
+
 ## Files
 ```
 belt-speed-measurement/
@@ -73,7 +76,7 @@ python src/belt_speed_measurement.py
 	4. **ROI Refinement**: Analyzes pixel density to get precise belt rectangle
 - **Output:** `{"x": 160, "y": 0, "width": 948, "height": 720}` with confidence score
 - **Result Display**
-![Belt Speed Visualization](imgs\roi_detection_visualization.png "Roi Detection Results")
+![Belt Speed Visualization](imgs/roi_detection_visualization.png "ROI Detection Results")
 
 
 **2. Direction Detection** (`detect_direction_interactive()`)
@@ -85,8 +88,8 @@ python src/belt_speed_measurement.py
 	4. **Direction Mapping** - Maps angles to directions: 45-135° = "down", 135-225° = "left", etc.
 - **Output:** Direction string ("down", "left", "right", "up") based on average motion angle
 - **Result Display**
-![Belt Speed Visualization](imgs\speed_meassure_visual.png "Speed Meassurement Window")
-![Belt Speed Visualization](imgs\speed_meassure_result.png "Speed Meassurement Result")
+![Belt Speed Visualization](imgs/speed_meassure_visual.png "Speed Measurement Window")
+![Belt Speed Visualization](imgs/speed_meassure_result.png "Speed Measurement Result")
 
 
  **3. Speed Measurement** (`calculate_speed_optical_flow()`)
