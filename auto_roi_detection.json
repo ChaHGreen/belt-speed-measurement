@@ -1,0 +1,11 @@
+{
+  "roi": {
+    "x": 168,
+    "y": 0,
+    "width": 980,
+    "height": 720
+  },
+  "direction": "down",
+  "confidence": 0.8,
+  "detection_method": "interactive"
+}
