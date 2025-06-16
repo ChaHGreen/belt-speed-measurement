@@ -8,17 +8,20 @@ import pyzed.sl as sl
 PATH = os.path.dirname(os.path.abspath(__file__))
 
 class BeltSpeedMeasurement:
-    def __init__(self, roi_config_path=None, calibration_factor=1.0):
+    def __init__(self, roi_config_path=None, camera_params=None):
         """
         Initialize belt speed measurement system
         
         Args:
-            roi_config_path: Path to ROI configuration file (JSON)
-            calibration_factor: Pixels to mm conversion factor
+            roi_config_path: Path to ROI configuration file
+            camera_params: ZED camera calibration parameters for 3D conversion
         """
+        if camera_params is None:
+            raise ValueError("camera_params is required for 3D speed measurement")
+            
         self.roi = None
         self.belt_direction = None
-        self.calibration_factor = calibration_factor
+        self.camera_params = camera_params
         self.previous_frame = None
         self.speed_history = deque(maxlen=10)
         self.belt_depth_range = None
@@ -41,8 +44,8 @@ class BeltSpeedMeasurement:
         if roi_config_path and os.path.exists(roi_config_path):
             self.load_roi_config(roi_config_path)
         
-        print(f"Belt Speed Measurement initialized")
-        print(f"Calibration factor: {self.calibration_factor} mm/pixel")
+        print(f"Belt Speed Measurement initialized with 3D tracking")
+        print(f"Camera params: fx={self.camera_params.fx:.1f}, fy={self.camera_params.fy:.1f}")
     
     def load_roi_config(self, config_path):
         try:
@@ -97,14 +100,74 @@ class BeltSpeedMeasurement:
         
         return corners
     
-    def calculate_speed_optical_flow(self, current_frame, previous_frame, 
-                                   current_depth=None, dt=1.0):
+    def pixel_to_3d(self, u, v, depth):
         """
-        Calculate belt speed using optical flow
+        Convert 2D pixel coordinates to 3D world coordinates
+        
+        Args:
+            u, v: Pixel coordinates
+            depth: Depth value at that pixel (in mm)
+            
+        Returns:
+            3D coordinates [X, Y, Z] in mm
+        """
+        if self.camera_params is None or depth <= 0:
+            return None
+            
+        fx = self.camera_params.fx
+        fy = self.camera_params.fy
+        cx = self.camera_params.cx
+        cy = self.camera_params.cy
+        
+        # Convert to 3D coordinates
+        X = (u - cx) * depth / fx
+        Y = (v - cy) * depth / fy
+        Z = depth
+        
+        return np.array([X, Y, Z])
+    
+    def get_depth_at_points(self, points, depth_frame, roi_offset=(0, 0)):
+        """
+        Get depth values at specified 2D points
+        
+        Args:
+            points: Array of 2D points
+            depth_frame: Depth frame data
+            roi_offset: Offset to convert ROI coordinates to full frame coordinates
+        """
+        if depth_frame is None:
+            return None
+            
+        depths = []
+        roi_x, roi_y = roi_offset
+        
+        for point in points:
+            u, v = int(point[0] + roi_x), int(point[1] + roi_y)
+            
+            # Ensure coordinates are within depth frame bounds
+            if 0 <= u < depth_frame.shape[1] and 0 <= v < depth_frame.shape[0]:
+                depth = depth_frame[v, u]
+                # Use median of small neighborhood for robustness
+                if depth > 0:
+                    neighborhood = depth_frame[max(0, v-1):v+2, max(0, u-1):u+2]
+                    valid_depths = neighborhood[neighborhood > 0]
+                    if len(valid_depths) > 0:
+                        depth = np.median(valid_depths)
+                depths.append(depth)
+            else:
+                depths.append(0)
+                
+        return np.array(depths)
+
+    def calculate_speed_optical_flow(self, current_frame, previous_frame, 
+                          current_depth=None, previous_depth=None, dt=1.0):
+        """
+        Calculate belt speed using 3D coordinate conversion
         Args:
             current_frame: Current RGB frame
             previous_frame: Previous RGB frame  
             current_depth: Current depth frame
+            previous_depth: Previous depth frame (if available)
             dt: Time difference between frames in seconds
         """
         if previous_frame is None:
@@ -132,17 +195,59 @@ class BeltSpeedMeasurement:
         if len(good_old) < 3:
             return None
         
-        motion_vectors = good_new - good_old
-        magnitudes = np.linalg.norm(motion_vectors, axis=1)
-        significant_motion = magnitudes > 0.5
+        # Get ROI offset for depth coordinate conversion
+        roi_offset = (0, 0)
+        if self.roi:
+            roi_offset = (self.roi['x'], self.roi['y'])
+        
+        # Get depth values at tracked points
+        depth_for_old_points = previous_depth if previous_depth is not None else current_depth
+        depths_old = self.get_depth_at_points(good_old, depth_for_old_points, roi_offset)
+        depths_new = self.get_depth_at_points(good_new, current_depth, roi_offset)
+        
+        if depths_old is None or depths_new is None:
+            # Fallback to old method if no depth data
+            return self.calculate_speed_optical_flow_fallback(good_old, good_new, dt)
+        
+        # Convert 2D points to 3D coordinates
+        points_3d_old = []
+        points_3d_new = []
+        
+        for i in range(len(good_old)):
+            if depths_old[i] > 0 and depths_new[i] > 0:
+                # Convert ROI coordinates back to full frame coordinates for 3D conversion
+                u_old, v_old = good_old[i][0] + roi_offset[0], good_old[i][1] + roi_offset[1]
+                u_new, v_new = good_new[i][0] + roi_offset[0], good_new[i][1] + roi_offset[1]
+                
+                point_3d_old = self.pixel_to_3d(u_old, v_old, depths_old[i])
+                point_3d_new = self.pixel_to_3d(u_new, v_new, depths_new[i])
+                
+                if point_3d_old is not None and point_3d_new is not None:
+                    points_3d_old.append(point_3d_old)
+                    points_3d_new.append(point_3d_new)
+        
+        if len(points_3d_old) < 3:
+            return self.calculate_speed_optical_flow_fallback(good_old, good_new, dt)
+        
+        points_3d_old = np.array(points_3d_old)
+        points_3d_new = np.array(points_3d_new)
+        
+        # Calculate 3D motion vectors
+        motion_vectors_3d = points_3d_new - points_3d_old
+        
+        # Calculate 3D distances
+        distances_3d = np.linalg.norm(motion_vectors_3d, axis=1)
+        
+        # Filter out very small motions/noise
+        significant_motion = distances_3d > 0.5  # 0.5mm threshold
         
         if np.sum(significant_motion) < 3:
             return None
         
-        filtered_vectors = motion_vectors[significant_motion]
-        median_motion = np.median(filtered_vectors, axis=0)
-        speed_pixels_per_frame = np.linalg.norm(median_motion)
-        speed_mm_per_second = (speed_pixels_per_frame * self.calibration_factor) / dt
+        filtered_distances = distances_3d[significant_motion]
+        median_distance_3d = np.median(filtered_distances)
+        
+        speed_mm_per_second = median_distance_3d / dt
         
         return speed_mm_per_second
     
@@ -200,6 +305,10 @@ class BeltSpeedMeasurement:
             cv2.putText(vis_frame, f"Direction: {self.belt_direction}", 
                        (10, 70), cv2.FONT_HERSHEY_SIMPLEX, 0.8, (255, 255, 255), 2)
         
+        # Show 3D tracking indicator
+        cv2.putText(vis_frame, "3D Tracking", 
+                   (10, frame.shape[0] - 20), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+        
         return vis_frame
 
 def main():
@@ -217,16 +326,8 @@ def main():
     camera_parameters = cam.get_camera_information().camera_configuration.calibration_parameters.left_cam
     print("Camera Parameters: ", camera_parameters.fx, camera_parameters.fy, camera_parameters.cx, camera_parameters.cy)
     
-    # Estimate calibration factor based on camera parameters and typical setup
-    fx = camera_parameters.fx
-    estimated_distance = 1000
-    calibration_factor = estimated_distance / fx
-    
-    print(f"Estimated calibration factor: {calibration_factor:.3f} mm/pixel")
-    print("Note: This is an approximation. For accurate results, calibrate with known reference object.")
-    
     roi_config_path = os.path.join(PATH, "..", "auto_roi_detection.json")
-    speed_detector = BeltSpeedMeasurement(roi_config_path, calibration_factor=calibration_factor)
+    speed_detector = BeltSpeedMeasurement(roi_config_path, camera_params=camera_parameters)
     
     runtime = sl.RuntimeParameters()
     image = sl.Mat()
@@ -292,7 +393,7 @@ def main():
         if roi_ready and speed_detector.previous_frame is not None:
             raw_speed = speed_detector.calculate_speed_optical_flow(
                 roi_frame, speed_detector.previous_frame, 
-                roi_depth, dt
+                roi_depth, speed_detector.previous_depth, dt
             )
         
         # Apply smoothing
@@ -309,8 +410,9 @@ def main():
         fhand.write(f"{timestamp_ms},{speed_value:.2f},{smoothed_speed:.2f}\n")
         fhand.flush()
         
-        # Store current frame for next iteration
+        # Store current frame and depth for next iteration
         speed_detector.previous_frame = roi_frame.copy()
+        speed_detector.previous_depth = roi_depth.copy() if roi_depth is not None else None
         previous_timestamp = timestamp_ms
         
         vis_frame = speed_detector.visualize_tracking(rgb_frame, speed=smoothed_speed)

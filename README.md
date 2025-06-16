@@ -1,12 +1,13 @@
 # Belt Speed Measurement System
 
-Automatic conveyor belt speed measurement using ZED camera data, achiving:
-- **Automatic ROI/Direction Detection**:  Finds belt region and moving direction using depth + motion analysis  
-- **Real-time Speed Measurement**: Optical flow tracking with depth masking  
-- **Stopped Belt Detection**:  Handles stationary belts correctly  
-- **Frame-by-Frame Logging** : Outputs `results.csv` with timestamps  
+Accurate conveyor belt speed measurement using ZED camera data, achieving:
+- **Automatic ROI/Direction Detection**: Finds belt region and moving direction using depth + motion analysis  
+- **3D Speed Measurement**: Uses depth sensor + camera intrinsics for accurate measurements at all distances
+- **Depth-Aware Tracking**: Optical flow tracking with depth masking eliminates background noise
+- **Stopped Belt Detection**: Handles stationary belts correctly  
+- **Frame-by-Frame Logging**: Outputs `results.csv` with timestamps  
 
-Demo in: [link](https://drive.google.com/file/d/1qWR8-7YAV6XU0sYz39lUvr57zceSWf--/view?usp=drive_link)
+Demo in: [link](https://drive.google.com/file/d/1q6UIS_moC9tAsoWD88K1XtJBSCisPogw/view?usp=sharing)
 
 ## Files
 ```
@@ -66,6 +67,8 @@ python src/auto_roi_detector.py --set-direction left
 python src/belt_speed_measurement.py
 ```
 
+
+
 ## How It Works
  **1. ROI Detection** (`detect_belt_region_with_depth()`)
 - **Purpose:** Automatically finds the belt's rectangular region in the camera view.
@@ -93,13 +96,14 @@ python src/belt_speed_measurement.py
 
 
  **3. Speed Measurement** (`calculate_speed_optical_flow()`)
-- **Purpose:** Measures real-time belt speed using optical flow tracking within the detected ROI.
+- **Purpose:** Measures real-time belt speed using **3D coordinate conversion** for accurate depth-aware measurements.
 - **Process:**
-	1. **Feature Detection** (`detect_features_with_depth()`): Finds trackable points on belt surface using depth masking
-	2. **Optical Flow Tracking**: Uses Lucas-Kanade algorithm (`cv2.calcOpticalFlowPyrLK()`) to track feature movement
-	3. **Motion Vector Analysis**: Calculates displacement vectors between consecutive frames
-	4. **Noise Filtering**: Removes motion < 0.5 pixels and uses median of vectors for robustness
-- **Output:** Speed in mm/s with both raw and smoothed measurements
+	1. **Feature Detection**: Finds trackable points on belt surface using depth masking
+	2. **Optical Flow Tracking**: Uses Lucas-Kanade algorithm to track feature movement between frames
+	3. **3D Conversion**: Converts 2D pixels to 3D coordinates using camera intrinsics and depth data
+	4. **Noise Filtering**: Removes motion < 0.5mm and uses median for robustness
+- **Output:** Accurate speed in mm/s at all depths with both raw and smoothed measurements
+- **Key Advantage:** Uses actual depth sensor data instead of fixed calibration factor, eliminating perspective distortion errors
 
 **4. Noise Handling** (`smooth_speed()`)
 - **Spatial Filtering**: 0.5-pixel threshold removes sub-pixel noise and camera shake
