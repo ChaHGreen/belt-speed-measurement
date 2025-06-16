@@ -91,8 +91,8 @@ python src/belt_speed_measurement.py
 	4. **Direction Mapping** - Maps angles to directions: 45-135° = "down", 135-225° = "left", etc.
 - **Output:** Direction string ("down", "left", "right", "up") based on average motion angle
 - **Result Display**
-![Belt Speed Visualization](imgs/speed_meassure_visual.png "Speed Measurement Window")
-![Belt Speed Visualization](imgs/speed_meassure_result.png "Speed Measurement Result")
+![Belt Speed Visualization](imgs/speed_meassure_visual_1.png "Speed Measurement Window")
+![Belt Speed Visualization](imgs/speed_meassure_result_1.png "Speed Measurement Result")
 
 
  **3. Speed Measurement** (`calculate_speed_optical_flow()`)

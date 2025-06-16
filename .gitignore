@@ -15,7 +15,7 @@ __pycache__/
 
 # Media files
 *.svo
-# *.mp4
+*.mp4
 
 # Video creation script
 src/create_video_from_frames.py
